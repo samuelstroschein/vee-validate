@@ -34,6 +34,9 @@ import {
   PrivateFieldArrayContext,
   InvalidSubmissionHandler,
   MapValues,
+  GenericFormValues,
+  TypedSchema,
+  YupSchema,
 } from './types';
 import {
   getFromPath,
@@ -53,9 +56,12 @@ import { validateTypedSchema, validateObjectSchema } from './validate';
 import { refreshInspector, registerFormWithDevTools } from './devtools';
 import { _useFieldValue } from './useFieldState';
 
-export interface FormOptions<TValues extends Record<string, any>> {
+export interface FormOptions<TValues extends GenericFormValues, TOutput extends TValues = TValues> {
   validationSchema?: MaybeRef<
-    Record<keyof TValues, GenericValidateFunction | string | Record<string, any>> | any | undefined
+    | Record<keyof TValues, GenericValidateFunction | string | GenericFormValues>
+    | TypedSchema<TValues, TOutput>
+    | YupSchema<TValues>
+    | undefined
   >;
   initialValues?: MaybeRef<TValues>;
   initialErrors?: Record<keyof TValues, string | undefined>;
@@ -66,9 +72,9 @@ export interface FormOptions<TValues extends Record<string, any>> {
 
 let FORM_COUNTER = 0;
 
-export function useForm<TValues extends Record<string, any> = Record<string, any>>(
-  opts?: FormOptions<TValues>
-): FormContext<TValues> {
+export function useForm<TValues extends GenericFormValues = GenericFormValues, TOutput extends TValues = TValues>(
+  opts?: FormOptions<TValues, TOutput>
+): FormContext<TValues, TOutput> {
   const formId = FORM_COUNTER++;
 
   const controlledModelPaths: Set<string> = new Set();
@@ -234,7 +240,7 @@ export function useForm<TValues extends Record<string, any> = Record<string, any
 
   function makeSubmissionFactory(onlyControlled: boolean) {
     return function submitHandlerFactory<TReturn = unknown>(
-      fn?: SubmissionHandler<TValues, TReturn>,
+      fn?: SubmissionHandler<TValues, TOutput, TReturn>,
       onValidationError?: InvalidSubmissionHandler<TValues>
     ) {
       return function submissionHandler(e: unknown) {
@@ -256,10 +262,10 @@ export function useForm<TValues extends Record<string, any> = Record<string, any
         submitCount.value++;
         return validate()
           .then(result => {
-            const values = deepCopy(formValues);
+            const values = deepCopy(formValues) as TOutput;
 
             if (result.valid && typeof fn === 'function') {
-              const controlled = deepCopy(controlledValues.value);
+              const controlled = deepCopy(controlledValues.value) as TOutput;
               return fn(onlyControlled ? controlled : values, {
                 evt: e as Event,
                 controlledValues: controlled,
@@ -303,7 +309,7 @@ export function useForm<TValues extends Record<string, any> = Record<string, any
   const handleSubmit: typeof handleSubmitImpl & { withControlled: typeof handleSubmitImpl } = handleSubmitImpl as any;
   handleSubmit.withControlled = makeSubmissionFactory(true);
 
-  const formCtx: PrivateFormContext<TValues> = {
+  const formCtx: PrivateFormContext<TValues, TOutput> = {
     formId,
     fieldsByPath,
     values: formValues,
@@ -867,7 +873,7 @@ function useFormMeta<TValues extends Record<string, unknown>>(
 /**
  * Manages the initial values prop
  */
-function useFormInitialValues<TValues extends Record<string, any>>(
+function useFormInitialValues<TValues extends GenericFormValues>(
   fields: Ref<FieldPathLookup<TValues>>,
   formValues: TValues,
   providedValues?: MaybeRef<TValues>
@@ -924,7 +930,7 @@ function useFormInitialValues<TValues extends Record<string, any>>(
   };
 }
 
-function useErrorBag<TValues extends Record<string, any>>(initialErrors?: FormErrors<TValues>) {
+function useErrorBag<TValues extends GenericFormValues>(initialErrors?: FormErrors<TValues>) {
   const errorBag: Ref<FormErrorBag<TValues>> = ref({});
 
   function normalizeErrorItem(message: string | string[]) {
