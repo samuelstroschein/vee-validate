@@ -67,8 +67,8 @@ export async function validate<TValue = unknown>(
  * Starts the validation process.
  */
 async function _validate<TValue = unknown>(field: FieldValidationContext<TValue>, value: TValue) {
-  if (isTypedSchema(field.rules)) {
-    return validateFieldWithYup(value, field.rules, { bails: field.bails });
+  if (isTypedSchema(field.rules) || isYupValidator(field.rules)) {
+    return validateFieldWithTypedSchema(value, field.rules);
   }
 
   // if a generic function or chain of generic functions
@@ -136,10 +136,6 @@ async function _validate<TValue = unknown>(field: FieldValidationContext<TValue>
   };
 }
 
-interface YupValidationOptions {
-  bails: boolean;
-}
-
 function yupToTypedSchema(yupSchema: YupSchema): TypedSchema {
   const schema: TypedSchema = {
     __type: 'VVTypedSchema',
@@ -147,7 +143,7 @@ function yupToTypedSchema(yupSchema: YupSchema): TypedSchema {
       const errorObjects: TypedSchemaError[] = await yupSchema
         .validate(values, { abortEarly: false })
         .then(() => [])
-        .catch((err: TypedSchemaError) => {
+        .catch((err: TypedSchemaError & { name: string; inner?: TypedSchemaError[] }) => {
           // Yup errors have a name prop one them.
           // https://github.com/jquense/yup#validationerrorerrors-string--arraystring-value-any-path-string
           if (err.name !== 'ValidationError') {
@@ -160,7 +156,7 @@ function yupToTypedSchema(yupSchema: YupSchema): TypedSchema {
 
       return errorObjects;
     },
-  } as TypedSchema;
+  };
 
   return schema;
 }
@@ -168,29 +164,19 @@ function yupToTypedSchema(yupSchema: YupSchema): TypedSchema {
 /**
  * Handles yup validation
  */
-async function validateFieldWithYup(
-  value: unknown,
-  validator: TypedSchema | YupSchema,
-  opts: Partial<YupValidationOptions>
-) {
-  const errors = await validator
-    .validate(value, {
-      abortEarly: opts.bails ?? true,
-    })
-    .then(() => [])
-    .catch((err: TypedSchemaError) => {
-      // Yup errors have a name prop one them.
-      // https://github.com/jquense/yup#validationerrorerrors-string--arraystring-value-any-path-string
-      if (err.name === 'ValidationError') {
-        return err.errors;
-      }
+async function validateFieldWithTypedSchema(value: unknown, schema: TypedSchema | YupSchema) {
+  const typedSchema = isTypedSchema(schema) ? schema : yupToTypedSchema(schema);
+  const errorObjects = await typedSchema.validate(value);
 
-      // re-throw the error so we don't hide it
-      throw err;
-    });
+  const messages: string[] = [];
+  for (const error of errorObjects) {
+    if (error.errors.length) {
+      messages.push(...error.errors);
+    }
+  }
 
   return {
-    errors,
+    errors: messages,
   };
 }
 /**
@@ -266,7 +252,7 @@ export async function validateTypedSchema<TValues>(
   schema: TypedSchema<TValues> | YupSchema<TValues>,
   values: TValues
 ): Promise<FormValidationResult<TValues>> {
-  const typedSchema = isYupValidator(schema) ? yupToTypedSchema(schema) : schema;
+  const typedSchema = isTypedSchema(schema) ? schema : yupToTypedSchema(schema);
   const errorObjects = await typedSchema.validate(values);
 
   const results: Partial<Record<keyof TValues, ValidationResult>> = {};
