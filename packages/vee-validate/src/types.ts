@@ -15,7 +15,7 @@ export interface TypedSchemaError {
 
 export interface TypedSchema<TInput = any, TOutput = TInput> {
   __type: 'VVTypedSchema';
-  validate(values: TInput): Promise<TypedSchemaError[]>;
+  validate(values: TInput): Promise<{ value?: TOutput; errors: TypedSchemaError[] }>;
 }
 
 export type YupSchema<TValue = any> = { validate(value: TValue, options: Record<string, any>): Promise<TValue> };
@@ -140,10 +140,11 @@ export interface FormActions<TValues extends GenericFormValues, TOutput extends 
   resetForm: (state?: Partial<FormState<TValues>>) => void;
 }
 
-export interface FormValidationResult<TValues> {
+export interface FormValidationResult<TValues, TOutput = TValues> {
   valid: boolean;
   results: Partial<Record<keyof TValues, ValidationResult>>;
   errors: Partial<Record<keyof TValues, string>>;
+  values?: TOutput;
 }
 
 export interface SubmissionContext<TValues extends GenericFormValues = GenericFormValues> extends FormActions<TValues> {
@@ -203,7 +204,7 @@ export interface PrivateFormContext<
   meta: ComputedRef<FormMeta<TValues>>;
   isSubmitting: Ref<boolean>;
   keepValuesOnUnmount: MaybeRef<boolean>;
-  validateSchema?: (mode: SchemaValidationMode) => Promise<FormValidationResult<TValues>>;
+  validateSchema?: (mode: SchemaValidationMode) => Promise<FormValidationResult<TValues, TOutput>>;
   validate(opts?: Partial<ValidationOptions>): Promise<FormValidationResult<TValues>>;
   validateField(field: keyof TValues): Promise<ValidationResult>;
   setFieldErrorBag(field: string, messages: string | string[]): void;
